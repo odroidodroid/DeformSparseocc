@@ -233,7 +233,8 @@ class SparseBEVSelfAttention(BaseModule):
 
         dist = []
         for b in range(centers.shape[0]):
-            dist_b = torch.norm(centers[b].reshape(-1, 1, 2) - centers[b].reshape(1, -1, 2), dim=-1)
+            dist_b = centers[b].reshape(-1, 1, 2) - centers[b].reshape(1, -1, 2)
+            dist_b = torch.norm(dist_b, dim=-1)
             dist.append(dist_b[None, ...])
 
         dist = torch.cat(dist, dim=0)  # [B, Q, Q]

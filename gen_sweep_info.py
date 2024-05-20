@@ -11,7 +11,7 @@ from pyquaternion import Quaternion
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data-root', default='data/nuscenes')
-parser.add_argument('--version', default='v1.0-trainval')
+parser.add_argument('--version', default='v1.0-test')
 args = parser.parse_args()
 
 

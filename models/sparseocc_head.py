@@ -38,10 +38,11 @@ class SparseOccHead(nn.Module):
         self.transformer.init_weights()
 
     @auto_fp16(apply_to=('mlvl_feats'))
-    def forward(self, mlvl_feats, img_metas):
+    def forward(self, mlvl_feats, img_metas, prev_occ):
         occ_preds, mask_preds, class_preds = self.transformer(
             mlvl_feats,
             img_metas=img_metas,
+            prev_occ=prev_occ
         )
         
         return {
@@ -107,6 +108,7 @@ class SparseOccHead(nn.Module):
             loss_dict['loss_dice_mask_{:d}'.format(i)] = loss_dice
             loss_dict['loss_class_{:d}'.format(i)] = loss_class
 
+        loss_dict['occ_preds'] = preds_dicts['occ_preds']
         return loss_dict
     
     def merge_occ_pred(self, outs):

@@ -104,7 +104,7 @@ class SparseVoxelDecoder(BaseModule):
         for i in range(len(self.decoder_layers)):
             self.decoder_layers[i].init_weights()
 
-    def forward(self, mlvl_feats, img_metas):
+    def forward(self, mlvl_feats, img_metas, prev_occ):
         occ_preds = []
         
         B = len(img_metas)

@@ -60,7 +60,7 @@ class SparseOccTransformer(BaseModule):
         self.voxel_decoder.init_weights()
         self.decoder.init_weights()
 
-    def forward(self, mlvl_feats, img_metas):
+    def forward(self, mlvl_feats, img_metas, prev_occ):
         for lvl, feat in enumerate(mlvl_feats):
             B, TN, GC, H, W = feat.shape  # [B, TN, GC, H, W]
             N, T, G, C = 6, TN // 6, 4, GC // 4
@@ -77,8 +77,8 @@ class SparseOccTransformer(BaseModule):
         img_metas = copy.deepcopy(img_metas)
         img_metas[0]['lidar2img'] = torch.matmul(lidar2img, ego2lidar)
 
-        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas)
-        mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas)
+        occ_preds = self.voxel_decoder(mlvl_feats, img_metas=img_metas, prev_occ=prev_occ)
+        mask_preds, class_preds = self.decoder(occ_preds, mlvl_feats, img_metas, prev_occ)
         
         return occ_preds, mask_preds, class_preds
 
@@ -120,7 +120,7 @@ class MaskFormerOccDecoder(BaseModule):
     def init_weights(self):
         self.decoder_layer.init_weights()
         
-    def forward(self, occ_preds, mlvl_feats, img_metas):
+    def forward(self, occ_preds, mlvl_feats, img_metas, prev_occ):
         occ_loc, occ_pred, _, mask_feat, _ = occ_preds[-1]
         bs = mask_feat.shape[0]
         query_feat = self.query_feat.weight[None].repeat(bs, 1, 1)

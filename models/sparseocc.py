@@ -7,8 +7,8 @@ from mmcv.runner import force_fp32, auto_fp16
 from mmdet.models import DETECTORS
 from mmdet3d.models.detectors.mvx_two_stage import MVXTwoStageDetector
 from .utils import GridMask, pad_multiple, GpuPhotoMetricDistortion
-
-
+from collections import OrderedDict
+import torch.distributed as dist
 @DETECTORS.register_module()
 class SparseOcc(MVXTwoStageDetector):
     def __init__(self,
@@ -46,6 +46,62 @@ class SparseOcc(MVXTwoStageDetector):
 
         self.memory = {}
         self.queue = queue.Queue()
+        
+    def train_step(self, data, optimizer, **kwargs):
+        losses = self(**data, **kwargs)
+        occ_preds = losses.pop('occ_preds')
+        loss, log_vars = self._parse_losses(losses)
+
+        outputs = dict(
+            loss=loss, log_vars=log_vars, num_samples=len(data['img_metas']), occ_preds=occ_preds)
+
+        return outputs
+
+    def _parse_losses(self, losses):
+        """Parse the raw outputs (losses) of the network.
+
+        Args:
+            losses (dict): Raw output of the network, which usually contain
+                losses and other necessary information.
+
+        Returns:
+            tuple[Tensor, dict]: (loss, log_vars), loss is the loss tensor \
+                which may be a weighted sum of all losses, log_vars contains \
+                all the variables to be sent to the logger.
+        """
+        log_vars = OrderedDict()
+        for loss_name, loss_value in losses.items():
+            if isinstance(loss_value, torch.Tensor):
+                log_vars[loss_name] = loss_value.mean()
+            elif isinstance(loss_value, list):
+                log_vars[loss_name] = sum(_loss.mean() for _loss in loss_value)
+            else:
+                raise TypeError(
+                    f'{loss_name} is not a tensor or list of tensors')
+
+        loss = sum(_value for _key, _value in log_vars.items()
+                   if 'loss' in _key)
+
+        # If the loss_vars has different length, GPUs will wait infinitely
+        if dist.is_available() and dist.is_initialized():
+            log_var_length = torch.tensor(len(log_vars), device=loss.device)
+            dist.all_reduce(log_var_length)
+            message = (f'rank {dist.get_rank()}' +
+                       f' len(log_vars): {len(log_vars)}' + ' keys: ' +
+                       ','.join(log_vars.keys()))
+            assert log_var_length == len(log_vars) * dist.get_world_size(), \
+                'loss log variables are different across GPUs!\n' + message
+
+        log_vars['loss'] = loss
+        for loss_name, loss_value in log_vars.items():
+            # reduce loss when distributed training
+            if dist.is_available() and dist.is_initialized():
+                loss_value = loss_value.data.clone()
+                dist.all_reduce(loss_value.div_(dist.get_world_size()))
+            log_vars[loss_name] = loss_value.item()
+
+        return loss, log_vars
+
 
     @auto_fp16(apply_to=('img'), out_fp32=True)
     def extract_img_feat(self, img):
@@ -112,13 +168,13 @@ class SparseOcc(MVXTwoStageDetector):
 
         return img_feats_reshaped
 
-    def forward_pts_train(self, mlvl_feats, voxel_semantics, voxel_instances, instance_class_ids, mask_camera, img_metas):
+    def forward_pts_train(self, mlvl_feats, voxel_semantics, voxel_instances, instance_class_ids, mask_camera, img_metas, prev_occ):
         """
         voxel_semantics: [bs, 200, 200, 16], value in range [0, num_cls - 1]
         voxel_instances: [bs, 200, 200, 16], value in range [0, num_obj - 1]
         instance_class_ids: [[bs0_num_obj], [bs1_num_obj], ...], value in range [0, num_cls - 1]
         """
-        outs = self.pts_bbox_head(mlvl_feats, img_metas)
+        outs = self.pts_bbox_head(mlvl_feats, img_metas, prev_occ)
         loss_inputs = [voxel_semantics, voxel_instances, instance_class_ids, outs]
         return self.pts_bbox_head.loss(*loss_inputs)
 
@@ -129,9 +185,9 @@ class SparseOcc(MVXTwoStageDetector):
             return self.forward_test(**kwargs)
 
     @force_fp32(apply_to=('img'))
-    def forward_train(self, img_metas=None, img=None, voxel_semantics=None, voxel_instances=None, instance_class_ids=None, mask_camera=None, **kwargs):
+    def forward_train(self, img_metas=None, img=None, voxel_semantics=None, voxel_instances=None, instance_class_ids=None, mask_camera=None, prev_occ=None, **kwargs):
         img_feats = self.extract_feat(img=img, img_metas=img_metas)
-        return self.forward_pts_train(img_feats, voxel_semantics, voxel_instances, instance_class_ids, mask_camera, img_metas)
+        return self.forward_pts_train(img_feats, voxel_semantics, voxel_instances, instance_class_ids, mask_camera, img_metas, prev_occ)
 
     def forward_test(self, img_metas, img=None, **kwargs):
         output = self.simple_test(img_metas, img)

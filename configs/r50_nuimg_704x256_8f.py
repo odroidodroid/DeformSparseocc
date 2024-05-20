@@ -38,7 +38,7 @@ _dim_ = 256
 _num_points_ = 4
 _num_groups_ = 4
 _num_layers_ = 4
-_num_frames_ = 8
+_num_frames_ = 4 ############
 _num_queries_ = 100
 _topk_training_ = [4000, 16000, 64000]
 _topk_testing_ = [2000, 8000, 32000]
@@ -163,7 +163,7 @@ data = dict(
 
 optimizer = dict(
     type='AdamW',
-    lr=2e-4,
+    lr=1e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
@@ -181,7 +181,7 @@ lr_config = dict(
     min_lr_ratio=1e-3
 )
 total_epochs = 48
-batch_size = 8
+batch_size = 4
 
 # load pretrained weights
 load_from = 'pretrain/cascade_mask_rcnn_r50_fpn_coco-20e_20e_nuim_20201009_124951-40963960.pth'
