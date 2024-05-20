@@ -1,3 +1,14 @@
+# checkpoints
+.pth
+
+# dataset & checkpoints
+data
+checkpoints
+pretrain
+
+# library
+lib
+
 # OS generated files
 .DS_Store
 .DS_Store?
@@ -16,7 +27,6 @@ Release
 x64
 *.so
 *.whl
-
 # VS project files
 *.sln
 *.vcxproj
